@@ -12,7 +12,7 @@ from ..db import get_job, update_job
 from .analyzer import enrich_with_openai, local_social_copy, select_best_candidates
 from .audiovisual import analyze_audiovisual
 from .media import MediaError, download_youtube, probe
-from .render import render_clip
+from .render import render_clip, resolve_project_framing
 from .transcript import discover_subtitles, transcribe_with_whisper
 
 
@@ -142,11 +142,22 @@ def process_job(self, job_id: str, source_type: str, url: str | None, upload_pat
         if not selected:
             raise MediaError("Nenhum trecho atingiu qualidade suficiente. Tente ampliar a faixa de duração.")
 
+        requested_framing = str(options.get("framing", "auto"))
+        project_framing, framing_strategy = resolve_project_framing(
+            source,
+            [(cand.start, cand.end) for cand in selected],
+            requested_framing,
+            media,
+        )
+        metadata["framing_strategy"] = framing_strategy
+        metadata["options"] = {**options, "effective_framing": project_framing}
+        update_job(job_id, metadata_json=metadata)
+
         clips_dir = workdir / "clips"
         clips_dir.mkdir(exist_ok=True)
         clips: list[dict[str, Any]] = []
         total = len(selected)
-        _set(job_id, 65, "analysis", f"{total} melhores momentos encontrados")
+        _set(job_id, 65, "analysis", f"{total} melhores momentos encontrados · enquadramento {project_framing}")
 
         for idx, cand in enumerate(selected, 1):
             base = 66 + int((idx - 1) / max(total, 1) * 32)
@@ -163,7 +174,7 @@ def process_job(self, job_id: str, source_type: str, url: str | None, upload_pat
                 segments,
                 subtitle_style,
                 str(options.get("preset", "tiktok")),
-                str(options.get("framing", "auto")),
+                project_framing,
                 media,
                 lambda ratio, b=base, s=span: _set(job_id, b + int(ratio * s), "render", f"Renderizando corte {idx}/{total} · {int(ratio * 100)}%"),
             )
