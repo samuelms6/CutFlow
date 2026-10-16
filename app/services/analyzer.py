@@ -42,6 +42,76 @@ def _sentence_boundary(text: str) -> bool:
     return bool(re.search(r"[.!?…][\"')\]]?$", text.strip()))
 
 
+def _topic_from_title(source_title: str) -> str:
+    raw = re.findall(r"\b[\wÀ-ÿ]{3,}\b", re.sub(r"[_-]+", " ", source_title or ""))
+    stop = {
+        "video", "vídeo", "official", "oficial", "full", "1080p", "720p", "2160p", "h264", "h265",
+        "music", "audio", "football", "soccer", "compilation", "highlights", "performance", "performances",
+        "greatest", "iconic", "king", "the", "and", "com", "para", "dos", "das"
+    }
+    words = []
+    for word in raw:
+        if word.lower() not in stop and word.lower() not in {w.lower() for w in words}:
+            words.append(word)
+        if len(words) >= 2:
+            break
+    return " ".join(words)
+
+
+def _visual_title(stats: dict[str, float], source_title: str) -> tuple[str, str]:
+    topic = _topic_from_title(source_title)
+    if stats["peak"] >= 0.78 and stats["motion"] >= 0.58:
+        label = "Sequência de alta intensidade"
+        hook = "Pico de ação e movimento"
+    elif stats["scene_density"] >= 0.58 and stats["motion"] >= 0.45:
+        label = "Sequência dinâmica de cenas"
+        hook = "Ritmo visual forte"
+    elif stats["audio"] >= 0.65 and stats["peak"] >= 0.62:
+        label = "Momento de alta energia"
+        hook = "Pico visual e sonoro"
+    elif stats["motion"] >= 0.62:
+        label = "Movimento intenso em destaque"
+        hook = "Ação acima da média"
+    elif stats["peak"] >= 0.68:
+        label = "Pico visual do vídeo"
+        hook = "Momento de maior intensidade"
+    else:
+        label = "Trecho de ritmo crescente"
+        hook = "Boa combinação de movimento e ritmo"
+    title = f"{topic} · {label}" if topic else label
+    return title[:110], hook
+
+
+def _calibrate_scores(candidates: list[Candidate]) -> list[Candidate]:
+    if not candidates:
+        return candidates
+    raw = [float(c.score) for c in candidates]
+    lo, hi = min(raw), max(raw)
+    spread = hi - lo
+    for candidate in candidates:
+        if spread >= 7.0:
+            relative = max(0.0, min(1.0, (candidate.score - lo) / spread))
+            calibrated = 48.0 + 47.0 * (relative ** 0.82)
+        else:
+            calibrated = 56.0 + max(0.0, min(34.0, candidate.score * 0.42))
+        candidate.score = round(max(45.0, min(96.0, calibrated)), 1)
+    return candidates
+
+
+def _quality_ceiling(duration: float) -> int:
+    if duration <= 90:
+        return 1
+    if duration <= 4 * 60:
+        return 3
+    if duration <= 8 * 60:
+        return 5
+    if duration <= 15 * 60:
+        return 7
+    if duration <= 25 * 60:
+        return 9
+    return 10
+
+
 def _semantic_score(parts: list[dict[str, Any]], start: float, end: float) -> tuple[float, dict[str, float], str, str]:
     transcript = " ".join(str(x.get("text", "")) for x in parts).strip()
     normalized = transcript.lower()
@@ -116,33 +186,46 @@ def build_semantic_candidates(segments: list[dict[str, Any]], duration: float, m
 def build_audiovisual_candidates(av: AVMap, min_duration: int, max_duration: int, source_title: str) -> list[Candidate]:
     windows = build_visual_windows(av, min_duration, max_duration)
     result: list[Candidate] = []
-    clean_source = re.sub(r"[_-]+", " ", source_title or "Vídeo").strip()
-    clean_source = re.sub(r"\s+", " ", clean_source)[:72]
-    for idx, w in enumerate(windows, 1):
-        s = w["stats"]
+    for window in windows:
+        stats = window["stats"]
+        resolution = float(window.get("resolution", 0.0))
+        title, hook = _visual_title(stats, source_title)
         breakdown = {
-            "intensidade": round(s["activity"] * 28, 1),
-            "pico": round(s["peak"] * 24, 1),
-            "movimento": round(s["motion"] * 18, 1),
-            "áudio": round(s["audio"] * 14, 1),
-            "transições": round(s["scene_density"] * 8, 1),
-            "fechamento": 8.0 if w["end_natural"] else 3.0,
+            "intensidade": round(stats["activity"] * 22, 1),
+            "pico": round(stats["peak"] * 26, 1),
+            "movimento": round(stats["motion"] * 18, 1),
+            "áudio": round(stats["audio"] * 10, 1),
+            "transições": round(stats["scene_density"] * 9, 1),
+            "fechamento": round((7.0 if window["end_natural"] else 1.5) + resolution * 5, 1),
         }
         reasons = []
-        if s["peak"] >= .65: reasons.append("pico forte de atividade")
-        if s["motion"] >= .55: reasons.append("movimento acima da média")
-        if s["audio"] >= .55: reasons.append("energia sonora elevada")
-        if s["scene_density"] >= .45: reasons.append("boa dinâmica de cenas")
-        if w["end_natural"]: reasons.append("encerramento alinhado a uma transição natural")
-        if not reasons: reasons.append("melhor combinação local de ritmo visual e áudio")
-        title = f"{clean_source} — destaque {idx}" if clean_source else f"Destaque {idx}"
-        hook = "Sequência de alta intensidade" if s["peak"] >= .65 else "Momento de maior destaque do vídeo"
+        if stats["peak"] >= .70:
+            reasons.append("pico forte de atividade")
+        if stats["motion"] >= .55:
+            reasons.append("movimento acima da média")
+        if stats["audio"] >= .58:
+            reasons.append("energia sonora elevada")
+        if stats["scene_density"] >= .48:
+            reasons.append("boa dinâmica de cenas")
+        if window["end_natural"] and resolution >= .45:
+            reasons.append("a ação desacelera antes do encerramento")
+        elif window["end_natural"]:
+            reasons.append("encerramento alinhado a uma transição natural")
+        if not reasons:
+            reasons.append("melhor combinação local de ritmo visual e áudio")
         result.append(Candidate(
-            w["start"], w["end"], w["score"], title[:110], hook,
-            ", ".join(reasons).capitalize(), "", breakdown, "audiovisual", bool(w["end_natural"])
+            window["start"],
+            window["end"],
+            window["score"],
+            title,
+            hook,
+            ", ".join(reasons).capitalize(),
+            "",
+            breakdown,
+            "audiovisual",
+            bool(window["end_natural"]),
         ))
     return result
-
 
 def _av_bonus(av: AVMap, start: float, end: float) -> tuple[float, dict[str, float]]:
     s = activity_stats(av, start, end)
@@ -162,42 +245,57 @@ def select_best_candidates(
     transcribe_enabled: bool,
 ) -> list[Candidate]:
     visual = build_audiovisual_candidates(av, min_duration, max_duration, source_title)
-    semantic = build_semantic_candidates(segments, av.duration, min_duration, max_duration) if transcribe_enabled and segments else []
+    semantic = build_semantic_candidates(
+        segments, av.duration, min_duration, max_duration
+    ) if transcribe_enabled and segments else []
 
     pool: list[Candidate] = []
-    for c in semantic:
-        bonus, av_breakdown = _av_bonus(av, c.start, c.end)
-        c.score = round(min(100.0, c.score * 0.82 + bonus), 1)
-        c.score_breakdown = {**(c.score_breakdown or {}), **av_breakdown}
-        c.analysis_mode = "híbrido"
-        pool.append(c)
-    # Visual candidates stay in the pool so action/music moments are not missed just because speech exists.
+    for candidate in semantic:
+        bonus, av_breakdown = _av_bonus(av, candidate.start, candidate.end)
+        candidate.score = round(min(100.0, candidate.score * 0.82 + bonus), 1)
+        candidate.score_breakdown = {**(candidate.score_breakdown or {}), **av_breakdown}
+        candidate.analysis_mode = "híbrido"
+        pool.append(candidate)
+
     pool.extend(visual)
-    pool.sort(key=lambda c: c.score, reverse=True)
+    if not pool:
+        return []
+
+    _calibrate_scores(pool)
+    pool.sort(key=lambda candidate: candidate.score, reverse=True)
+
+    # Quantidade editorial: qualidade primeiro, duração apenas define um teto de segurança.
+    top_score = pool[0].score
+    quality_floor = max(64.0, top_score - 18.0)
+    ceiling = min(MAX_CLIPS, _quality_ceiling(av.duration))
 
     selected: list[Candidate] = []
-    budget = min(MAX_CLIPS, auto_clip_budget(av.duration))
-    threshold = 57.0
-    for cand in pool:
-        if cand.score < threshold and selected:
+    for candidate in pool:
+        if candidate.score < quality_floor and selected:
             continue
-        overlap = any(max(cand.start, s.start) < min(cand.end, s.end) - min_duration * .35 for s in selected)
+        overlap = any(
+            max(candidate.start, existing.start) <
+            min(candidate.end, existing.end) - min_duration * 0.35
+            for existing in selected
+        )
         if overlap:
             continue
-        selected.append(cand)
-        if len(selected) >= budget:
+
+        if len(selected) >= 2:
+            previous_score = selected[-1].score
+            if previous_score - candidate.score >= 9.0:
+                break
+
+        selected.append(candidate)
+        if len(selected) >= ceiling:
             break
-    if not selected and pool:
+
+    if not selected:
         selected = pool[:1]
-    selected.sort(key=lambda c: c.start)
 
-    # Rename generic audiovisual titles after final chronological order.
-    for idx, c in enumerate(selected, 1):
-        if c.analysis_mode == "audiovisual":
-            clean_source = re.sub(r"[_-]+", " ", source_title or "Vídeo").strip()
-            c.title = f"{clean_source[:70]} — momento {idx}" if clean_source else f"Momento {idx}"
+    # Mantém ordem cronológica na interface, mas os scores continuam refletindo o ranking.
+    selected.sort(key=lambda candidate: candidate.start)
     return selected
-
 
 def enrich_with_openai(candidates: list[Candidate]) -> list[Candidate]:
     if not OPENAI_API_KEY or not OPENAI_MODEL or not candidates:

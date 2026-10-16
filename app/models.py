@@ -9,7 +9,7 @@ class JobOptions(BaseModel):
     transcribe: bool = True
     subtitle_style: str = Field(default="viral", pattern="^(none|viral|clean|karaoke)$")
     preset: str = Field(default="tiktok", pattern="^(tiktok|reels|shorts)$")
-    framing: str = Field(default="auto", pattern="^(auto|face|center|fit)$")
+    framing: str = Field(default="auto", pattern="^(auto|action|face|center|fit)$")
 
     @model_validator(mode="after")
     def validate_duration(self):
@@ -37,7 +37,7 @@ class ClipEditRequest(BaseModel):
     end: float | None = Field(default=None, gt=0)
     subtitle_style: str | None = Field(default=None, pattern="^(none|viral|clean|karaoke)$")
     preset: str | None = Field(default=None, pattern="^(tiktok|reels|shorts)$")
-    framing: str | None = Field(default=None, pattern="^(auto|face|center|fit)$")
+    framing: str | None = Field(default=None, pattern="^(auto|action|face|center|fit)$")
     description: str | None = Field(default=None, max_length=500)
     hashtags: list[str] | None = Field(default=None, max_length=15)
 

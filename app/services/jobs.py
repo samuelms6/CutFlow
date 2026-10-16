@@ -150,6 +150,12 @@ def process_job(self, job_id: str, source_type: str, url: str | None, upload_pat
             media,
         )
         metadata["framing_strategy"] = framing_strategy
+        metadata["output_format"] = {
+            "resolution": "1080x1920",
+            "aspect_ratio": "9:16",
+            "orientation": "vertical",
+            "full_bleed": project_framing != "fit",
+        }
         metadata["options"] = {**options, "effective_framing": project_framing}
         update_job(job_id, metadata_json=metadata)
 
@@ -199,7 +205,11 @@ def process_job(self, job_id: str, source_type: str, url: str | None, upload_pat
                 "preset": options.get("preset", "tiktok"),
                 "framing": render_meta.get("framing", "auto"),
                 "face_confidence": render_meta.get("face_confidence", 0),
+                "tracking_confidence": render_meta.get("tracking_confidence", 0),
                 "tracking_subject": render_meta.get("tracking_subject", "none"),
+                "format": render_meta.get("format", "1080x1920"),
+                "aspect_ratio": render_meta.get("aspect_ratio", "9:16"),
+                "full_bleed": render_meta.get("full_bleed", True),
                 "description": social.get("description", ""),
                 "hashtags": social.get("hashtags", []),
                 "title_options": social.get("title_options", []),
@@ -252,7 +262,11 @@ def rerender_clip(self, job_id: str, clip_id: str, edits: dict[str, Any]):
         "subtitle_style": style,
         "framing": render_meta.get("framing", clip.get("framing")),
         "face_confidence": render_meta.get("face_confidence", 0),
+        "tracking_confidence": render_meta.get("tracking_confidence", 0),
         "tracking_subject": render_meta.get("tracking_subject", "none"),
+        "format": render_meta.get("format", clip.get("format", "1080x1920")),
+        "aspect_ratio": render_meta.get("aspect_ratio", clip.get("aspect_ratio", "9:16")),
+        "full_bleed": render_meta.get("full_bleed", clip.get("full_bleed", True)),
         "revision": revision,
         "url": f"/media/{job_id}/clips/{clip['filename']}?v={revision}",
     })

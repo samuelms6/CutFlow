@@ -3,13 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CutFlow Studio V3</title>
-  <link rel="stylesheet" href="/static/app.css?v=3.0.4" />
+  <title>CutFlow Studio V3.1</title>
+  <link rel="stylesheet" href="/static/app.css?v=3.1.0" />
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <div class="brand"><div class="brand-mark">CF</div><div><strong>CutFlow</strong><span>Studio V3</span></div></div>
+      <div class="brand"><div class="brand-mark">CF</div><div><strong>CutFlow</strong><span>Studio V3.1</span></div></div>
       <nav>
         <button class="nav-item active" data-view="dashboard">▦ <span>Projetos</span></button>
         <button class="nav-item" data-view="new">＋ <span>Novo corte</span></button>
@@ -49,10 +49,11 @@
               </div>
               <div class="options-grid advanced-grid">
                 <label>Preset<select id="urlPreset"><option value="tiktok" selected>TikTok</option><option value="reels">Instagram Reels</option><option value="shorts">YouTube Shorts</option></select></label>
+                <label>Formato<select disabled><option>Vertical 9:16 · 1080×1920 · tela cheia</option></select></label>
                 <label>Duração mínima<input id="urlMin" type="number" min="10" max="120" value="20"></label>
                 <label>Duração máxima<input id="urlMax" type="number" min="15" max="180" value="60"></label>
                 <label>Legendas<select id="urlStyle"><option value="viral" selected>Viral</option><option value="clean">Clean</option><option value="karaoke">Karaokê palavra por palavra</option></select></label>
-                <label>Enquadramento<select id="urlFraming"><option value="auto" selected>Automático</option><option value="face">Priorizar rosto/pessoa</option><option value="center">Centro</option><option value="fit">Vídeo completo + fundo</option></select></label>
+                <label>Enquadramento<select id="urlFraming"><option value="auto" selected>Automático · tela cheia</option><option value="action">Ação · tela cheia</option><option value="face">Rosto/pessoa · tela cheia</option><option value="center">Centro · tela cheia</option><option value="fit">Vídeo completo + fundo</option></select></label>
               </div>
               <div class="auto-note"><strong>Quantidade automática</strong><span>Não existe mais número fixo. O sistema usa a duração, densidade de atividade e qualidade para decidir quantos cortes gerar.</span></div>
               <label class="check"><input id="urlAuth" type="checkbox" required><span>Confirmo que sou proprietário do conteúdo ou possuo autorização para processá-lo.</span></label>
@@ -66,10 +67,11 @@
               </div>
               <div class="options-grid advanced-grid">
                 <label>Preset<select id="uploadPreset"><option value="tiktok" selected>TikTok</option><option value="reels">Instagram Reels</option><option value="shorts">YouTube Shorts</option></select></label>
+                <label>Formato<select disabled><option>Vertical 9:16 · 1080×1920 · tela cheia</option></select></label>
                 <label>Duração mínima<input id="uploadMin" type="number" min="10" max="120" value="20"></label>
                 <label>Duração máxima<input id="uploadMax" type="number" min="15" max="180" value="60"></label>
                 <label>Legendas<select id="uploadStyle"><option value="viral" selected>Viral</option><option value="clean">Clean</option><option value="karaoke">Karaokê palavra por palavra</option></select></label>
-                <label>Enquadramento<select id="uploadFraming"><option value="auto" selected>Automático</option><option value="face">Priorizar rosto/pessoa</option><option value="center">Centro</option><option value="fit">Vídeo completo + fundo</option></select></label>
+                <label>Enquadramento<select id="uploadFraming"><option value="auto" selected>Automático · tela cheia</option><option value="action">Ação · tela cheia</option><option value="face">Rosto/pessoa · tela cheia</option><option value="center">Centro · tela cheia</option><option value="fit">Vídeo completo + fundo</option></select></label>
               </div>
               <div class="auto-note"><strong>Quantidade automática</strong><span>O CutFlow pode gerar poucos ou vários cortes; só mantém os momentos que atingirem qualidade suficiente.</span></div>
               <label class="check"><input id="uploadAuth" type="checkbox" required><span>Confirmo que sou proprietário do conteúdo ou possuo autorização para processá-lo.</span></label>
@@ -78,7 +80,7 @@
           </div>
 
           <aside class="panel tips">
-            <div class="icon-card">✦</div><h3>Pipeline V3</h3>
+            <div class="icon-card">✦</div><h3>Pipeline V3.1</h3>
             <div class="step"><b>1</b><div><strong>Mapa audiovisual</strong><span>Cenas, movimento, energia do áudio e transições</span></div></div>
             <div class="step"><b>2</b><div><strong>Transcrição opcional</strong><span>Whisper somente quando fizer sentido para o conteúdo</span></div></div>
             <div class="step"><b>3</b><div><strong>Seleção inteligente</strong><span>Quantidade automática, score e fechamento natural</span></div></div>
@@ -101,7 +103,8 @@
           <label>Título<input id="editTitle" maxlength="120"></label>
           <div class="options-grid"><label>Início (s)<input id="editStart" type="number" step="0.1" min="0"></label><label>Fim (s)<input id="editEnd" type="number" step="0.1" min="0"></label></div>
           <div class="options-grid"><label>Preset<select id="editPreset"><option value="tiktok">TikTok</option><option value="reels">Reels</option><option value="shorts">Shorts</option></select></label><label>Legenda<select id="editStyle"><option value="none">Sem legenda</option><option value="viral">Viral</option><option value="clean">Clean</option><option value="karaoke">Karaokê</option></select></label></div>
-          <label>Enquadramento<select id="editFraming"><option value="auto">Automático</option><option value="face">Rosto/pessoa</option><option value="center">Centro</option><option value="fit">Completo + fundo</option></select></label>
+          <label>Enquadramento<select id="editFraming"><option value="auto">Automático · tela cheia</option><option value="action">Ação · tela cheia</option><option value="face">Rosto/pessoa · tela cheia</option><option value="center">Centro · tela cheia</option><option value="fit">Completo + fundo</option></select></label>
+          <div class="auto-note"><strong>Formato de saída</strong><span>Vertical 9:16 · 1080×1920. O modo automático preenche toda a tela.</span></div>
           <label>Descrição<textarea id="editDescription" rows="3" maxlength="500"></textarea></label>
           <label>Hashtags<input id="editHashtags" placeholder="#tema #cortes #conteudo"></label>
           <button id="saveEditBtn" class="primary wide" type="button">Salvar e rerenderizar</button>
@@ -111,6 +114,6 @@
   </dialog>
 
   <div id="toast" class="toast"></div>
-  <script src="/static/app.js?v=3.0.4"></script>
+  <script src="/static/app.js?v=3.1.0"></script>
 </body>
 </html>

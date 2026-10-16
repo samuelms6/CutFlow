@@ -248,57 +248,114 @@ def auto_clip_budget(duration: float) -> int:
     return 12
 
 
+def _mean_activity_near(av: AVMap, center: float, radius: float = 2.5) -> float:
+    pts = [p.activity for p in av.points if center - radius <= p.t <= center + radius]
+    return float(np.mean(pts)) if pts else 0.0
+
+
+def _refine_visual_end(av: AVMap, start: float, peak_t: float, end: float, max_duration: int) -> tuple[float, bool, float]:
+    """Evita encerrar enquanto a ação ainda está em alta.
+
+    Procura a próxima transição natural depois do pico e prefere um ponto onde
+    a atividade cai, o que funciona melhor para jogadas esportivas e montagens.
+    """
+    max_end = min(av.duration, start + max_duration)
+    end = min(max_end, max(end, peak_t + 4.0))
+    snapped = any(abs(b - end) <= 0.15 for b in av.natural_boundaries)
+    tail_activity = _mean_activity_near(av, end - 1.5, 2.0)
+    candidates = [b for b in av.natural_boundaries if end + 0.6 <= b <= max_end]
+
+    if end < peak_t + 5.0 or tail_activity >= 0.48:
+        for boundary in candidates[:4]:
+            before = _mean_activity_near(av, boundary - 1.5, 1.7)
+            after = _mean_activity_near(av, boundary + 1.5, 1.7)
+            end = boundary
+            snapped = True
+            tail_activity = after
+            if after <= 0.44 or after <= before * 0.82:
+                break
+
+    return round(float(end), 2), snapped, float(tail_activity)
+
+
 def build_visual_windows(av: AVMap, min_duration: int, max_duration: int) -> list[dict[str, Any]]:
     if not av.points:
         return []
-    activity = np.asarray([p.activity for p in av.points], dtype=float)
-    times = np.asarray([p.t for p in av.points], dtype=float)
-    radius_samples = max(2, int((min_duration * 0.55) / max(av.sample_interval, 0.1)))
+
+    activity = _finite(np.asarray([p.activity for p in av.points], dtype=float))
+    times = _finite(np.asarray([p.t for p in av.points], dtype=float))
+    radius_samples = max(2, int((min_duration * 0.50) / max(av.sample_interval, 0.1)))
 
     peaks: list[tuple[float, int]] = []
     for i in range(1, len(activity) - 1):
         if activity[i] >= activity[i - 1] and activity[i] >= activity[i + 1]:
             left = max(0, i - radius_samples)
             right = min(len(activity), i + radius_samples + 1)
-            prominence = activity[i] - float(np.percentile(activity[left:right], 35))
-            if activity[i] >= 0.43 and prominence >= 0.06:
-                peaks.append((float(activity[i] + prominence * 0.4), i))
+            local = activity[left:right]
+            prominence = activity[i] - float(np.percentile(local, 35))
+            if activity[i] >= 0.38 and prominence >= 0.045:
+                peaks.append((float(activity[i] + prominence * 0.45), i))
+
+    candidate_cap = min(48, max(8, auto_clip_budget(av.duration) * 4))
     if not peaks:
-        peaks = sorted([(float(v), i) for i, v in enumerate(activity)], reverse=True)[:auto_clip_budget(av.duration) * 3]
+        peaks = sorted([(float(v), i) for i, v in enumerate(activity)], reverse=True)[:candidate_cap * 2]
     peaks.sort(reverse=True)
 
-    target = max(min_duration, min(max_duration, int((min_duration + max_duration) * 0.58)))
+    target = max(min_duration, min(max_duration, int((min_duration + max_duration) * 0.60)))
     windows: list[dict[str, Any]] = []
-    for _, idx in peaks[: auto_clip_budget(av.duration) * 6]:
+
+    for _, idx in peaks[: candidate_cap * 3]:
         peak_t = float(times[idx])
-        raw_start = max(0.0, peak_t - target * 0.42)
-        raw_end = min(av.duration, raw_start + target)
+        raw_start = max(0.0, peak_t - target * 0.35)
+        raw_end = min(av.duration, peak_t + target * 0.65)
+
         if raw_end - raw_start < min_duration:
             raw_start = max(0.0, raw_end - min_duration)
-        start, start_snapped = _nearest_boundary(av.natural_boundaries, raw_start, 7.0, prefer_before=True)
-        end_target = min(av.duration, max(start + min_duration, raw_end))
-        end, end_snapped = _nearest_boundary(av.natural_boundaries, end_target, 9.0, prefer_before=False)
+
+        start, start_snapped = _nearest_boundary(
+            av.natural_boundaries, raw_start, 6.5, prefer_before=True
+        )
+        end_target = min(av.duration, max(start + min_duration, raw_end, peak_t + 4.0))
+        end, end_snapped = _nearest_boundary(
+            av.natural_boundaries, end_target, 9.0, prefer_before=False
+        )
+
         if end - start < min_duration:
             end = min(av.duration, start + min_duration)
-            end, extra = _nearest_boundary(av.natural_boundaries, end, 6.0, prefer_before=False)
+            end, extra = _nearest_boundary(
+                av.natural_boundaries, end, 6.0, prefer_before=False
+            )
             end_snapped = end_snapped or extra
+
+        end, refined, tail_activity = _refine_visual_end(
+            av, start, peak_t, end, max_duration
+        )
+        end_snapped = end_snapped or refined
+
         if end - start > max_duration:
-            end = start + max_duration
-            end, extra = _nearest_boundary(av.natural_boundaries, end, 5.0, prefer_before=True)
+            end = min(av.duration, start + max_duration)
+            end, extra = _nearest_boundary(
+                av.natural_boundaries, end, 4.5, prefer_before=True
+            )
             end_snapped = end_snapped or extra
+
         if end - start < max(8.0, min_duration * 0.75):
             continue
+
         stats = activity_stats(av, start, end)
-        natural = (1.0 if start_snapped else 0.0) + (1.0 if end_snapped else 0.0)
+        resolution = max(0.0, min(1.0, 1.0 - tail_activity))
         score = (
-            stats["activity"] * 34
-            + stats["peak"] * 24
-            + stats["motion"] * 15
-            + stats["audio"] * 11
-            + stats["scene_density"] * 8
-            + natural * 4
+            stats["activity"] * 22
+            + stats["peak"] * 26
+            + stats["motion"] * 18
+            + stats["audio"] * 10
+            + stats["scene_density"] * 9
+            + (3.0 if start_snapped else 0.0)
+            + (7.0 if end_snapped else 1.5)
+            + resolution * 5
         )
-        score = max(0.0, min(100.0, score + 20.0))
+        score = max(0.0, min(100.0, score))
+
         windows.append({
             "start": round(float(start), 2),
             "end": round(float(end), 2),
@@ -307,20 +364,26 @@ def build_visual_windows(av: AVMap, min_duration: int, max_duration: int) -> lis
             "stats": stats,
             "start_natural": start_snapped,
             "end_natural": end_snapped,
+            "tail_activity": round(tail_activity, 3),
+            "resolution": round(resolution, 3),
         })
 
     windows.sort(key=lambda w: w["score"], reverse=True)
     selected: list[dict[str, Any]] = []
-    budget = auto_clip_budget(av.duration)
-    for w in windows:
-        overlap = any(max(w["start"], s["start"]) < min(w["end"], s["end"]) - min_duration * 0.35 for s in selected)
-        if overlap:
+    for window in windows:
+        if window["score"] < 34 and selected:
             continue
-        if w["score"] < 55 and selected:
+        duplicate = any(
+            max(window["start"], other["start"]) < min(window["end"], other["end"])
+            - min_duration * 0.55
+            for other in selected
+        )
+        if duplicate:
             continue
-        selected.append(w)
-        if len(selected) >= budget:
+        selected.append(window)
+        if len(selected) >= candidate_cap:
             break
+
     if not selected and windows:
         selected = windows[:1]
     selected.sort(key=lambda w: w["start"])

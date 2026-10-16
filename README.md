@@ -225,3 +225,17 @@ transcript.json
 ## Estado desta entrega
 
 A V3 é uma versão de homologação funcional. Antes de SaaS público ainda são recomendados autenticação, PostgreSQL, storage externo, quotas, billing e observabilidade centralizada.
+
+
+## V3.1 — qualidade editorial e vertical full-bleed
+
+A V3.1 muda o foco de quantidade para qualidade:
+
+- a quantidade de cortes é decidida pelo ranking de qualidade do próprio vídeo; a duração define apenas um teto de segurança;
+- scores são recalibrados para separar melhor momentos fortes, médios e fracos;
+- vídeos sem transcrição recebem títulos descritivos baseados em intensidade, movimento, áudio e dinâmica de cenas;
+- fechamentos audiovisuais podem ser estendidos até uma transição em que a atividade desacelera, evitando cortar a ação cedo demais;
+- o modo Automático usa rosto quando ele é consistente e, nos demais casos, tracking de ação/movimento;
+- TikTok, Reels e Shorts saem em **1080×1920 (9:16)**;
+- `auto`, `action`, `face` e `center` são modos **tela cheia/full-bleed**, sem faixas superiores/inferiores;
+- `fit` continua disponível manualmente para quem prefere preservar o quadro horizontal inteiro sobre fundo adaptado.
