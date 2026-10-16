@@ -1,4 +1,4 @@
-const $=s=>document.querySelector(s), $=s=>[...document.querySelectorAll(s)];
+const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 function uiError(selector){return new Error(`A interface está desatualizada ou incompleta (${selector}). Recarregue a página com Ctrl+Shift+R.`)}
 function must(selector){const el=$(selector);if(!el)throw uiError(selector);return el}
 function valueOf(selector,fallback=''){const el=$(selector);return el?.value ?? fallback}
