@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CutFlow Studio V3</title>
+  <link rel="stylesheet" href="/static/app.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><div class="brand-mark">CF</div><div><strong>CutFlow</strong><span>Studio V3</span></div></div>
+      <nav>
+        <button class="nav-item active" data-view="dashboard">▦ <span>Projetos</span></button>
+        <button class="nav-item" data-view="new">＋ <span>Novo corte</span></button>
+      </nav>
+      <div class="sidebar-footer"><span class="status-dot"></span> API + Redis + Worker</div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div><p class="eyebrow">Estúdio inteligente de vídeos curtos</p><h1>Encontre os melhores momentos e transforme em cortes verticais</h1></div>
+        <button id="newProjectBtn" class="primary">＋ Novo projeto</button>
+      </header>
+
+      <section id="dashboardView" class="view active">
+        <div class="stats-grid">
+          <article class="stat"><span>Projetos</span><strong id="statProjects">0</strong><small>Total processado</small></article>
+          <article class="stat"><span>Cortes</span><strong id="statClips">0</strong><small>Momentos selecionados</small></article>
+          <article class="stat"><span>Em processamento</span><strong id="statProcessing">0</strong><small>Fila atual</small></article>
+          <article class="stat"><span>Concluídos</span><strong id="statCompleted">0</strong><small>Prontos para publicar</small></article>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><div><h2>Projetos recentes</h2><p>Acompanhe análise audiovisual, transcrição opcional, tracking e renderização.</p></div><button id="refreshBtn" class="ghost">Atualizar</button></div>
+          <div id="jobsList" class="jobs-list"><div class="empty">Nenhum projeto ainda.</div></div>
+        </div>
+      </section>
+
+      <section id="newView" class="view">
+        <div class="composer-grid">
+          <div class="panel composer">
+            <div class="panel-head"><div><h2>Novo projeto</h2><p>O CutFlow decide automaticamente quantos cortes valem a pena com base na duração e nos melhores momentos.</p></div></div>
+            <div class="tabs"><button class="tab active" data-tab="url">URL do YouTube</button><button class="tab" data-tab="upload">Enviar arquivo</button></div>
+
+            <form id="urlForm" class="form tabpane active">
+              <label>URL do vídeo<input id="youtubeUrl" type="url" placeholder="https://www.youtube.com/watch?v=..." required></label>
+              <div class="analysis-choice">
+                <label class="toggle-row"><input id="urlTranscribe" type="checkbox" checked><span><strong>Transcrever fala e gerar legendas</strong><small>Ative para podcasts, entrevistas e aulas. Desative para música, esportes e montagens sem fala relevante.</small></span></label>
+              </div>
+              <div class="options-grid advanced-grid">
+                <label>Preset<select id="urlPreset"><option value="tiktok" selected>TikTok</option><option value="reels">Instagram Reels</option><option value="shorts">YouTube Shorts</option></select></label>
+                <label>Duração mínima<input id="urlMin" type="number" min="10" max="120" value="20"></label>
+                <label>Duração máxima<input id="urlMax" type="number" min="15" max="180" value="60"></label>
+                <label>Legendas<select id="urlStyle"><option value="viral" selected>Viral</option><option value="clean">Clean</option><option value="karaoke">Karaokê palavra por palavra</option></select></label>
+                <label>Enquadramento<select id="urlFraming"><option value="auto" selected>Automático</option><option value="face">Priorizar rosto/pessoa</option><option value="center">Centro</option><option value="fit">Vídeo completo + fundo</option></select></label>
+              </div>
+              <div class="auto-note"><strong>Quantidade automática</strong><span>Não existe mais número fixo. O sistema usa a duração, densidade de atividade e qualidade para decidir quantos cortes gerar.</span></div>
+              <label class="check"><input id="urlAuth" type="checkbox" required><span>Confirmo que sou proprietário do conteúdo ou possuo autorização para processá-lo.</span></label>
+              <button class="primary wide" type="submit">Analisar melhores momentos</button>
+            </form>
+
+            <form id="uploadForm" class="form tabpane" enctype="multipart/form-data">
+              <label class="dropzone"><input id="videoFile" type="file" accept="video/mp4,video/webm,video/quicktime,.mkv,.m4v" required><strong>Arraste seu vídeo ou clique para selecionar</strong><span>MP4, MOV, MKV, WEBM ou M4V</span><em id="fileName">Nenhum arquivo selecionado</em></label>
+              <div class="analysis-choice">
+                <label class="toggle-row"><input id="uploadTranscribe" type="checkbox" checked><span><strong>Transcrever fala e gerar legendas</strong><small>Desative quando o conteúdo for principalmente música, esporte ou montagem visual.</small></span></label>
+              </div>
+              <div class="options-grid advanced-grid">
+                <label>Preset<select id="uploadPreset"><option value="tiktok" selected>TikTok</option><option value="reels">Instagram Reels</option><option value="shorts">YouTube Shorts</option></select></label>
+                <label>Duração mínima<input id="uploadMin" type="number" min="10" max="120" value="20"></label>
+                <label>Duração máxima<input id="uploadMax" type="number" min="15" max="180" value="60"></label>
+                <label>Legendas<select id="uploadStyle"><option value="viral" selected>Viral</option><option value="clean">Clean</option><option value="karaoke">Karaokê palavra por palavra</option></select></label>
+                <label>Enquadramento<select id="uploadFraming"><option value="auto" selected>Automático</option><option value="face">Priorizar rosto/pessoa</option><option value="center">Centro</option><option value="fit">Vídeo completo + fundo</option></select></label>
+              </div>
+              <div class="auto-note"><strong>Quantidade automática</strong><span>O CutFlow pode gerar poucos ou vários cortes; só mantém os momentos que atingirem qualidade suficiente.</span></div>
+              <label class="check"><input id="uploadAuth" type="checkbox" required><span>Confirmo que sou proprietário do conteúdo ou possuo autorização para processá-lo.</span></label>
+              <button class="primary wide" type="submit">Enviar e analisar melhores momentos</button>
+            </form>
+          </div>
+
+          <aside class="panel tips">
+            <div class="icon-card">✦</div><h3>Pipeline V3</h3>
+            <div class="step"><b>1</b><div><strong>Mapa audiovisual</strong><span>Cenas, movimento, energia do áudio e transições</span></div></div>
+            <div class="step"><b>2</b><div><strong>Transcrição opcional</strong><span>Whisper somente quando fizer sentido para o conteúdo</span></div></div>
+            <div class="step"><b>3</b><div><strong>Seleção inteligente</strong><span>Quantidade automática, score e fechamento natural</span></div></div>
+            <div class="step"><b>4</b><div><strong>Finalização</strong><span>Tracking, áudio normalizado, preset social e editor</span></div></div>
+          </aside>
+        </div>
+      </section>
+
+      <section id="detailView" class="view"><button id="backBtn" class="ghost">← Voltar</button><div id="detailContent"></div></section>
+    </main>
+  </div>
+
+  <dialog id="editorDialog" class="editor-dialog">
+    <form method="dialog" class="editor-panel" id="editorForm">
+      <div class="panel-head"><div><p class="eyebrow">Editor de corte</p><h2 id="editorHeading">Editar corte</h2></div><button value="cancel" class="ghost">✕</button></div>
+      <input type="hidden" id="editJobId"><input type="hidden" id="editClipId">
+      <div class="editor-layout">
+        <video id="editPreview" controls class="edit-preview"></video>
+        <div class="form">
+          <label>Título<input id="editTitle" maxlength="120"></label>
+          <div class="options-grid"><label>Início (s)<input id="editStart" type="number" step="0.1" min="0"></label><label>Fim (s)<input id="editEnd" type="number" step="0.1" min="0"></label></div>
+          <div class="options-grid"><label>Preset<select id="editPreset"><option value="tiktok">TikTok</option><option value="reels">Reels</option><option value="shorts">Shorts</option></select></label><label>Legenda<select id="editStyle"><option value="none">Sem legenda</option><option value="viral">Viral</option><option value="clean">Clean</option><option value="karaoke">Karaokê</option></select></label></div>
+          <label>Enquadramento<select id="editFraming"><option value="auto">Automático</option><option value="face">Rosto/pessoa</option><option value="center">Centro</option><option value="fit">Completo + fundo</option></select></label>
+          <label>Descrição<textarea id="editDescription" rows="3" maxlength="500"></textarea></label>
+          <label>Hashtags<input id="editHashtags" placeholder="#tema #cortes #conteudo"></label>
+          <button id="saveEditBtn" class="primary wide" type="button">Salvar e rerenderizar</button>
+        </div>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
