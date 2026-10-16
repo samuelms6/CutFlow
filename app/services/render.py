@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 import subprocess
 from pathlib import Path
@@ -79,6 +80,49 @@ def _run_ffmpeg_progress(cmd: list[str], duration: float, progress_cb: Callable[
     if progress_cb: progress_cb(1.0)
 
 
+
+def resolve_project_framing(
+    source: Path,
+    windows: list[tuple[float, float]],
+    requested: str,
+    media_meta: dict[str, Any] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Resolve um único enquadramento automático para todos os cortes do projeto.
+
+    Evita alternar visualmente entre crop com tracking e vídeo completo com fundo
+    quando apenas um corte tem uma detecção ocasional de rosto.
+    """
+    requested = requested or "auto"
+    if requested != "auto":
+        return requested, {"requested": requested, "effective": requested, "sampled": 0, "confident_faces": 0}
+
+    src_w = int((media_meta or {}).get("width") or 1920)
+    src_h = int((media_meta or {}).get("height") or 1080)
+    if src_w <= src_h or not windows:
+        return "fit", {"requested": "auto", "effective": "fit", "sampled": 0, "confident_faces": 0}
+
+    sample_windows = windows[: min(6, len(windows))]
+    tracks: list[dict[str, Any]] = []
+    for start, end in sample_windows:
+        tracks.append(detect_face_track(source, float(start), float(end), src_w, src_h))
+
+    confident_faces = [
+        t for t in tracks
+        if t.get("subject") == "face" and float(t.get("confidence", 0) or 0) >= 0.45
+    ]
+    required = max(1, math.ceil(len(tracks) * 0.70))
+    effective = "face" if len(confident_faces) >= required else "fit"
+    return effective, {
+        "requested": "auto",
+        "effective": effective,
+        "sampled": len(tracks),
+        "confident_faces": len(confident_faces),
+        "required_faces": required,
+        "average_confidence": round(
+            sum(float(t.get("confidence", 0) or 0) for t in tracks) / max(len(tracks), 1), 3
+        ),
+    }
+
 def render_clip(source: Path, output: Path, start: float, end: float, segments: list[dict[str, Any]], subtitle_style: str,
                 preset: str="tiktok", framing: str="auto", media_meta: dict[str,Any]|None=None, progress_cb=None) -> dict[str,Any]:
     require_binary("ffmpeg")
@@ -90,8 +134,12 @@ def render_clip(source: Path, output: Path, start: float, end: float, segments: 
     effective=framing
     if framing in {"auto","face"} and src_w > src_h:
         track=detect_face_track(source,start,end,src_w,src_h)
-        if framing=="face" or track.get("confidence",0)>=0.25: effective="face"
-        elif framing=="auto": effective="fit"
+        if framing=="face":
+            effective="face"
+        elif track.get("subject")=="face" and float(track.get("confidence",0) or 0)>=0.55:
+            effective="face"
+        else:
+            effective="fit"
     if effective=="face" and src_w>src_h:
         cw,ch,xexpr,yexpr=crop_expression(track,src_w,src_h)
         vf=f"[0:v]crop={cw}:{ch}:x='{xexpr}':y='{yexpr}',scale={width}:{height}[base]"
