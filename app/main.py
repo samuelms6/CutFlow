@@ -15,7 +15,7 @@ from .models import ClipEditRequest, JobOptions, UrlJobRequest
 from .services.jobs import enqueue_upload_job, enqueue_url_job, job_dir, remove_job_files, rerender_clip
 from .services.media import MediaError, probe
 
-app = FastAPI(title="CutFlow Studio", version="3.0.0")
+app = FastAPI(title="CutFlow Studio", version="3.0.1")
 app.mount("/static", StaticFiles(directory=BASE_DIR / "app" / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "app" / "templates")
 
@@ -27,12 +27,12 @@ def startup():
 
 @app.get("/", response_class=HTMLResponse)
 def home(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse("index.html", {"request": request}, headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "service": "CutFlow Studio", "version": "3.0.0", "queue": "celery+redis"}
+    return {"ok": True, "service": "CutFlow Studio", "version": "3.0.1", "queue": "celery+redis"}
 
 
 @app.get("/api/jobs")
