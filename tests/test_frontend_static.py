@@ -11,8 +11,10 @@ def test_frontend_selector_helpers_are_distinct():
 
 
 def test_frontend_asset_version_matches_backend():
+    version = Path("VERSION").read_text(encoding="utf-8").strip()
     html = Path("app/templates/index.html").read_text(encoding="utf-8")
     main = Path("app/main.py").read_text(encoding="utf-8")
-    assert "/static/app.js?v=3.0.2" in html
-    assert "/static/app.css?v=3.0.2" in html
-    assert 'version="3.0.2"' in main
+    assert f"/static/app.js?v={version}" in html
+    assert f"/static/app.css?v={version}" in html
+    assert f'version="{version}"' in main
+    assert f'"version": "{version}"' in main
