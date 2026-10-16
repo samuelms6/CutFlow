@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Callable
 from ..config import OUTPUT_CRF, PRESETS
 from .media import MediaError, require_binary
-from .tracking import crop_expression, detect_face_track
+from .tracking import crop_expression, detect_action_track, detect_face_track
 
 
 def _ass_time(seconds: float) -> str:
@@ -98,8 +98,10 @@ def resolve_project_framing(
 
     src_w = int((media_meta or {}).get("width") or 1920)
     src_h = int((media_meta or {}).get("height") or 1080)
-    if src_w <= src_h or not windows:
-        return "fit", {"requested": "auto", "effective": "fit", "sampled": 0, "confident_faces": 0}
+    if not windows:
+        return "center", {"requested": "auto", "effective": "center", "sampled": 0, "confident_faces": 0}
+    if src_w <= src_h:
+        return "center", {"requested": "auto", "effective": "center", "sampled": 0, "confident_faces": 0}
 
     sample_windows = windows[: min(6, len(windows))]
     tracks: list[dict[str, Any]] = []
@@ -111,7 +113,7 @@ def resolve_project_framing(
         if t.get("subject") == "face" and float(t.get("confidence", 0) or 0) >= 0.45
     ]
     required = max(1, math.ceil(len(tracks) * 0.70))
-    effective = "face" if len(confident_faces) >= required else "fit"
+    effective = "face" if len(confident_faces) >= required else "action"
     return effective, {
         "requested": "auto",
         "effective": effective,
@@ -130,24 +132,25 @@ def render_clip(source: Path, output: Path, start: float, end: float, segments: 
     ass_path=output.with_suffix(".ass")
     has_subs = False if subtitle_style == "none" else write_clip_ass(segments,start,end,ass_path,subtitle_style,width,height,int(cfg["safe_bottom"]))
     src_w=int((media_meta or {}).get("width") or 1920); src_h=int((media_meta or {}).get("height") or 1080)
-    track={"mode":"center","confidence":0,"samples":[]}
+    track={"mode":"center","confidence":0,"samples":[],"subject":"none"}
     effective=framing
-    if framing in {"auto","face"} and src_w > src_h:
-        track=detect_face_track(source,start,end,src_w,src_h)
-        if framing=="face":
-            effective="face"
-        elif track.get("subject")=="face" and float(track.get("confidence",0) or 0)>=0.55:
-            effective="face"
-        else:
-            effective="fit"
+    if framing=="auto":
+        effective="action"
     if effective=="face" and src_w>src_h:
+        track=detect_face_track(source,start,end,src_w,src_h)
         cw,ch,xexpr,yexpr=crop_expression(track,src_w,src_h)
         vf=f"[0:v]crop={cw}:{ch}:x='{xexpr}':y='{yexpr}',scale={width}:{height}[base]"
-    elif effective=="center" and src_w>src_h:
-        cw=min(src_w,int(src_h*9/16)); vf=f"[0:v]crop={cw}:{src_h}:(iw-{cw})/2:0,scale={width}:{height}[base]"
-    else:
+    elif effective=="action" and src_w>src_h:
+        track=detect_action_track(source,start,end,src_w,src_h)
+        cw,ch,xexpr,yexpr=crop_expression(track,src_w,src_h)
+        vf=f"[0:v]crop={cw}:{ch}:x='{xexpr}':y='{yexpr}',scale={width}:{height}[base]"
+    elif effective in {"center","fill"}:
+        vf=f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}[base]"
+    elif effective=="fit":
         vf=(f"[0:v]scale=270:480:force_original_aspect_ratio=increase,crop=270:480,boxblur=18:9,scale={width}:{height}[bg];"
             f"[0:v]scale={width}:{height}:force_original_aspect_ratio=decrease[fg];[bg][fg]overlay=(W-w)/2:(H-h)/2[base]")
+    else:
+        vf=f"[0:v]scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height}[base]"
     if has_subs: vf += f";[base]ass='{_escape_filter_path(ass_path)}'[v]"
     else: vf += ";[base]null[v]"
     audio_filter="highpass=f=70,lowpass=f=15000,afftdn=nf=-28,loudnorm=I=-14:LRA=7:TP=-1.5"
@@ -157,4 +160,14 @@ def render_clip(source: Path, output: Path, start: float, end: float, segments: 
     cmd += ["-c:v","libx264","-preset","veryfast","-crf",str(OUTPUT_CRF),"-maxrate",cfg["video_bitrate"],"-bufsize","12000k",
             "-movflags","+faststart","-pix_fmt","yuv420p","-progress","pipe:1","-nostats",str(output)]
     _run_ffmpeg_progress(cmd,duration,progress_cb,max(300,int(duration*25)))
-    return {"framing":effective,"face_confidence":track.get("confidence",0),"tracking_subject":track.get("subject","none"),"preset":preset,"subtitle_style":subtitle_style}
+    return {
+        "framing": effective,
+        "face_confidence": track.get("confidence",0) if track.get("subject")=="face" else 0,
+        "tracking_confidence": track.get("confidence",0),
+        "tracking_subject": track.get("subject","none"),
+        "preset": preset,
+        "subtitle_style": subtitle_style,
+        "format": f"{width}x{height}",
+        "aspect_ratio": "9:16",
+        "full_bleed": effective != "fit",
+    }
