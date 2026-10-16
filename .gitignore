@@ -4,4 +4,6 @@ __pycache__/
 .env
 data/jobs/
 data/cutflow.db
+data/cutflow.db-shm
+data/cutflow.db-wal
 .pytest_cache/
