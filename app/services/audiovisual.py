@@ -42,14 +42,20 @@ class AVMap:
         }
 
 
+def _finite(values: np.ndarray) -> np.ndarray:
+    values = np.asarray(values, dtype=float)
+    return np.nan_to_num(values, nan=0.0, posinf=0.0, neginf=0.0)
+
+
 def _norm(values: np.ndarray) -> np.ndarray:
+    values = _finite(values)
     if values.size == 0:
         return values
     lo = float(np.percentile(values, 10))
     hi = float(np.percentile(values, 95))
-    if hi - lo < 1e-9:
+    if not math.isfinite(lo) or not math.isfinite(hi) or hi - lo < 1e-9:
         return np.zeros_like(values, dtype=float)
-    return np.clip((values - lo) / (hi - lo), 0.0, 1.0)
+    return _finite(np.clip((values - lo) / (hi - lo), 0.0, 1.0))
 
 
 def _smooth(values: np.ndarray, radius: int = 2) -> np.ndarray:
@@ -93,10 +99,14 @@ def _sample_video(source: Path, duration: float, interval: float, progress_cb=No
         cv2.normalize(hist, hist, 0, 1, cv2.NORM_MINMAX)
 
         scene = 0.0 if prev_hist is None else float(cv2.compareHist(prev_hist, hist, cv2.HISTCMP_BHATTACHARYYA))
+        if not math.isfinite(scene):
+            scene = 0.0
         motion = 0.0
         if prev_gray is not None:
             diff = cv2.absdiff(prev_gray, gray)
             motion = float(np.mean(diff) / 255.0)
+            if not math.isfinite(motion):
+                motion = 0.0
         times.append(float(t))
         scene_scores.append(scene)
         motion_scores.append(motion)
@@ -147,21 +157,24 @@ def analyze_audiovisual(
         raise MediaError("A análise visual não conseguiu ler quadros do vídeo.")
     atimes, audio = _sample_audio(source, duration, interval, has_audio)
     if audio.size:
-        audio_interp = np.interp(times, atimes, audio, left=float(audio[0]), right=float(audio[-1]))
+        audio_interp = np.interp(times, atimes, _finite(audio), left=float(_finite(audio)[0]), right=float(_finite(audio)[-1]))
     else:
         audio_interp = np.zeros_like(times)
+    scenes = _finite(scenes)
+    motions = _finite(motions)
+    audio_interp = _finite(audio_interp)
 
     scene_n = _norm(scenes)
     motion_n = _norm(motions)
     audio_n = _norm(audio_interp)
-    activity = _smooth(scene_n * 0.38 + motion_n * 0.37 + audio_n * 0.25, radius=2)
+    activity = _finite(_smooth(scene_n * 0.38 + motion_n * 0.37 + audio_n * 0.25, radius=2))
 
     # Scene changes are strong visual discontinuities, ideal candidates for starts/ends.
     scene_threshold = max(0.32, float(np.percentile(scenes, 88))) if scenes.size >= 5 else 0.35
     scene_changes = [round(float(t), 2) for t, s in zip(times, scenes) if s >= scene_threshold]
 
     # Audio valleys often correspond to beat/phrase transitions or pauses. They are useful even in music-only videos.
-    audio_s = _smooth(audio_n, radius=2)
+    audio_s = _finite(_smooth(audio_n, radius=2))
     audio_valleys: list[float] = []
     for i in range(2, len(audio_s) - 2):
         if audio_s[i] <= audio_s[i - 1] and audio_s[i] <= audio_s[i + 1] and audio_s[i] <= 0.35:

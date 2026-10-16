@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 from datetime import datetime, timezone
+from numbers import Integral, Real
 from typing import Any
 from .config import DB_PATH
 
@@ -13,6 +15,60 @@ def _conn() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA busy_timeout=30000")
     return conn
+
+
+def json_safe(value: Any) -> Any:
+    """Converte recursivamente valores para JSON estrito.
+
+    FastAPI/Starlette rejeita NaN e Infinity. Como análises numéricas podem
+    produzir esses valores em entradas incomuns, normalizamos para null antes
+    de persistir e novamente ao ler registros antigos.
+    """
+    if value is None or isinstance(value, (str, bool)):
+        return value
+    if isinstance(value, Integral):
+        return int(value)
+    if isinstance(value, Real):
+        number = float(value)
+        return number if math.isfinite(number) else None
+    if isinstance(value, dict):
+        return {str(key): json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [json_safe(item) for item in value]
+
+    item_method = getattr(value, "item", None)
+    if callable(item_method):
+        try:
+            return json_safe(item_method())
+        except Exception:
+            pass
+    return value
+
+
+def _strict_json(value: Any) -> str:
+    return json.dumps(json_safe(value), ensure_ascii=False, allow_nan=False)
+
+
+def _repair_nonfinite_rows(conn: sqlite3.Connection) -> None:
+    rows = conn.execute("SELECT id, metadata_json, clips_json FROM jobs").fetchall()
+    for row in rows:
+        replacements: dict[str, str] = {}
+        for field in ("metadata_json", "clips_json"):
+            raw = row[field]
+            try:
+                parsed = json.loads(raw)
+                normalized = _strict_json(parsed)
+                if normalized != raw:
+                    replacements[field] = normalized
+            except Exception:
+                replacements[field] = "{}" if field == "metadata_json" else "[]"
+        if replacements:
+            assignments = ", ".join(f"{key} = ?" for key in replacements)
+            values = list(replacements.values()) + [now_iso(), row["id"]]
+            conn.execute(
+                f"UPDATE jobs SET {assignments}, updated_at = ? WHERE id = ?",
+                values,
+            )
 
 
 def init_db() -> None:
@@ -36,6 +92,7 @@ def init_db() -> None:
             )
             """
         )
+        _repair_nonfinite_rows(conn)
 
 
 def now_iso() -> str:
@@ -58,8 +115,14 @@ def update_job(job_id: str, **fields: Any) -> None:
     for key, value in fields.items():
         if key not in allowed:
             continue
-        if key in {"metadata_json", "clips_json"} and not isinstance(value, str):
-            value = json.dumps(value, ensure_ascii=False)
+        if key in {"metadata_json", "clips_json"}:
+            if isinstance(value, str):
+                try:
+                    value = _strict_json(json.loads(value))
+                except Exception:
+                    value = "{}" if key == "metadata_json" else "[]"
+            else:
+                value = _strict_json(value)
         payload[key] = value
     if not payload:
         return
@@ -76,10 +139,11 @@ def _decode(row: sqlite3.Row | None) -> dict[str, Any] | None:
     item = dict(row)
     for key in ("metadata_json", "clips_json"):
         try:
-            item[key.removesuffix("_json")] = json.loads(item.pop(key))
+            decoded = json.loads(item.pop(key))
+            item[key.removesuffix("_json")] = json_safe(decoded)
         except Exception:
             item[key.removesuffix("_json")] = {} if key.startswith("metadata") else []
-    return item
+    return json_safe(item)
 
 
 def get_job(job_id: str) -> dict[str, Any] | None:
